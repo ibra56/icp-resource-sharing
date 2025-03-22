@@ -1,0 +1,26 @@
+{
+  "canisters": {
+    "icp-resource-sharing-backend": {
+      "main": "src/icp-resource-sharing-backend/main.mo",
+      "type": "motoko"
+    },
+    "icp-resource-sharing-frontend": {
+      "dependencies": [
+        "icp-resource-sharing-backend"
+      ],
+      "source": [
+        "src/icp-resource-sharing-frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "icp-resource-sharing-frontend"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

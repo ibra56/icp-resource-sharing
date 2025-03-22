@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { icp_resource_sharing_backend } from 'declarations/icp-resource-sharing-backend';
+import './App.css'; // Make sure to create this file with the CSS styles
 
 function App() {
   // State for form inputs
@@ -11,6 +12,7 @@ function App() {
   const [resources, setResources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState('info'); // 'success', 'error', 'info'
 
   // Fetch available resources on component mount
   useEffect(() => {
@@ -26,9 +28,17 @@ function App() {
       setLoading(false);
     } catch (error) {
       console.error("Error fetching resources:", error);
-      setMessage("Failed to load resources. Please try again.");
+      showMessage("Failed to load resources. Please try again.", "error");
       setLoading(false);
     }
+  };
+
+  // Function to show message with type
+  const showMessage = (text, type = 'info') => {
+    setMessage(text);
+    setMessageType(type);
+    // Auto-hide message after 5 seconds
+    setTimeout(() => setMessage(''), 5000);
   };
 
   // Function to add a new resource
@@ -36,13 +46,13 @@ function App() {
     e.preventDefault();
     
     if (!category || !location || quantity < 1) {
-      setMessage("Please fill all fields with valid values");
+      showMessage("Please fill all fields with valid values", "error");
       return;
     }
     
     try {
       setLoading(true);
-      setMessage("Adding resource...");
+      showMessage("Adding resource...", "info");
       
       const resourceId = await icp_resource_sharing_backend.addResource(
         category,
@@ -50,7 +60,7 @@ function App() {
         location
       );
       
-      setMessage(`Resource added successfully with ID: ${resourceId}`);
+      showMessage(`Resource added successfully with ID: ${resourceId}`, "success");
       setCategory('');
       setQuantity(1);
       setLocation('');
@@ -59,7 +69,7 @@ function App() {
       fetchResources();
     } catch (error) {
       console.error("Error adding resource:", error);
-      setMessage("Failed to add resource. Please try again.");
+      showMessage("Failed to add resource. Please try again.", "error");
       setLoading(false);
     }
   };
@@ -69,136 +79,144 @@ function App() {
     try {
       setLoading(true);
       const result = await icp_resource_sharing_backend.claimResource(resourceId);
-      setMessage(result);
+      showMessage(result, "success");
       
       // Refresh the resources list
       fetchResources();
     } catch (error) {
       console.error("Error claiming resource:", error);
-      setMessage("Failed to claim resource. Please try again.");
+      showMessage("Failed to claim resource. Please try again.", "error");
       setLoading(false);
     }
   };
 
   return (
-    <div className="app-container" style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      <h1>Resource Sharing Platform</h1>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>Community Resource Sharing</h1>
+        <p className="subtitle">Powered by Internet Computer</p>
+      </header>
       
       {/* Message display */}
       {message && (
-        <div className="message" style={{ 
-          padding: '10px', 
-          marginBottom: '20px',
-          backgroundColor: message.includes('successfully') ? '#d4edda' : '#f8d7da',
-          borderRadius: '5px'
-        }}>
-          {message}
+        <div className={`message message-${messageType}`}>
+          <span className="message-icon">
+            {messageType === 'success' ? '✓' : messageType === 'error' ? '✗' : 'ℹ'}
+          </span>
+          <span className="message-text">{message}</span>
         </div>
       )}
       
-      {/* Add Resource Form */}
-      <div className="form-container" style={{ marginBottom: '30px', padding: '20px', border: '1px solid #ddd', borderRadius: '5px' }}>
-        <h2>Add New Resource</h2>
-        <form onSubmit={handleAddResource}>
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="category" style={{ display: 'block', marginBottom: '5px' }}>Category:</label>
-            <input
-              type="text"
-              id="category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-              placeholder="e.g., Food, Clothing, Medical Supplies"
-            />
+      <div className="content-container">
+        {/* Add Resource Form */}
+        <div className="form-container">
+          <div className="form-header">
+            <h2>Contribute Resources</h2>
+            <p>Share resources with your community</p>
+          </div>
+          <form onSubmit={handleAddResource}>
+            <div className="form-group">
+              <label htmlFor="category">Resource Category</label>
+              <input
+                type="text"
+                id="category"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="e.g., Food, Clothing, Medical Supplies"
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="quantity">Available Quantity</label>
+              <input
+                type="number"
+                id="quantity"
+                value={resources.quantity}
+                min="1"
+                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+              />
+            </div>
+            
+            <div className="form-group">
+              <label htmlFor="location">Pickup Location</label>
+              <input
+                type="text"
+                id="location"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g., New York, Remote"
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              className={`btn btn-primary ${loading ? 'btn-loading' : ''}`}
+              disabled={loading}
+            >
+              {loading ? 'Processing...' : 'Add Resource'}
+            </button>
+          </form>
+        </div>
+        
+        {/* Available Resources List */}
+        <div className="resources-container">
+          <div className="resources-header">
+            <h2>Available Resources</h2>
+            <button onClick={fetchResources} className="btn btn-refresh" disabled={loading}>
+              ↻ Refresh
+            </button>
           </div>
           
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="quantity" style={{ display: 'block', marginBottom: '5px' }}>Quantity:</label>
-            <input
-              type="number"
-              id="quantity"
-              value={quantity}
-              min="1"
-              onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-            />
-          </div>
-          
-          <div style={{ marginBottom: '15px' }}>
-            <label htmlFor="location" style={{ display: 'block', marginBottom: '5px' }}>Location:</label>
-            <input
-              type="text"
-              id="location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-              placeholder="e.g., New York, Remote"
-            />
-          </div>
-          
-          <button 
-            type="submit" 
-            disabled={loading}
-            style={{
-              backgroundColor: '#4CAF50',
-              color: 'white',
-              padding: '10px 15px',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1
-            }}
-          >
-            {loading ? 'Processing...' : 'Add Resource'}
-          </button>
-        </form>
+          {loading && resources.length === 0 ? (
+            <div className="loading-container">
+              <div className="loading-spinner"></div>
+              <p>Loading resources...</p>
+            </div>
+          ) : resources.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">📦</div>
+              <p>No available resources found.</p>
+              <p className="empty-subtitle">Be the first to contribute!</p>
+            </div>
+          ) : (
+            <div className="resources-grid">
+              {resources.map((resource) => (
+                <div key={resource.id} className="resource-card">
+                  <div className="resource-header">
+                    <span className="resource-category">{resource.category}</span>
+                    <span className={`resource-status status-${resource.status.toLowerCase()}`}>
+                      {resource.status}
+                    </span>
+                  </div>
+                  <div className="resource-details">
+                    <div className="resource-detail">
+                      <span className="detail-icon">🔢</span>
+                      <span className="detail-label">Quantity:</span>
+                      <span className="detail-value">{resource.quantity}</span>
+                    </div>
+                    <div className="resource-detail">
+                      <span className="detail-icon">📍</span>
+                      <span className="detail-label">Location:</span>
+                      <span className="detail-value">{resource.location}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleClaimResource(resource.id)}
+                    className="btn btn-secondary"
+                    disabled={loading || resource.status.toLowerCase() !== 'available'}
+                  >
+                    {resource.status.toLowerCase() === 'available' ? 'Claim Resource' : 'Already Claimed'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       
-      {/* Available Resources List */}
-      <div className="resources-container">
-        <h2>Available Resources</h2>
-        {loading ? (
-          <p>Loading resources...</p>
-        ) : resources.length === 0 ? (
-          <p>No available resources found.</p>
-        ) : (
-          <div className="resources-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
-            {resources.map((resource) => (
-              <div 
-                key={resource.id} 
-                className="resource-card"
-                style={{
-                  border: '1px solid #ddd',
-                  borderRadius: '5px',
-                  padding: '15px',
-                  backgroundColor: '#f9f9f9'
-                }}
-              >
-                <h3>{resource.category}</h3>
-                <p><strong>Quantity:</strong> {resource.quantity}</p>
-                <p><strong>Location:</strong> {resource.location}</p>
-                <p><strong>Status:</strong> {resource.status}</p>
-                <button
-                  onClick={() => handleClaimResource(resource.id)}
-                  disabled={loading}
-                  style={{
-                    backgroundColor: '#007bff',
-                    color: 'white',
-                    padding: '8px 12px',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    width: '100%',
-                    marginTop: '10px'
-                  }}
-                >
-                  Claim Resource
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <footer className="app-footer">
+        <p>Built on <a href="https://internetcomputer.org" target="_blank" rel="noopener noreferrer">Internet Computer</a> | Decentralized Resource Sharing</p>
+      </footer>
     </div>
   );
 }

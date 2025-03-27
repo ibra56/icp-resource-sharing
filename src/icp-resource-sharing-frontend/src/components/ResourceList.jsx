@@ -1,4 +1,3 @@
-// src/components/ResourceList.jsx
 import { useState, useEffect } from 'react';
 import { icp_resource_sharing_backend as backend } from '../../../declarations/icp-resource-sharing-backend';
 import ResourceCard from './ResourceCard.jsx';

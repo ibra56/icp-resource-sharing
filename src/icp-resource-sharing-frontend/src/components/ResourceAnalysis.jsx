@@ -1,4 +1,3 @@
-// src/components/ResourceAnalysis.jsx
 import { useState } from 'react';
 import { icp_resource_sharing_backend as backend } from '../../../declarations/icp-resource-sharing-backend';
 

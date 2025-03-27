@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react';
 import { icp_resource_sharing_backend } from 'declarations/icp-resource-sharing-backend';
-import './App.css'; // Make sure to create this file with the CSS styles
+import './App.css';
 
 function App() {
   // State for form inputs
   const [category, setCategory] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [location, setLocation] = useState('');
+  
+  // State for AI matching
+  const [userNeeds, setUserNeeds] = useState('');
+  const [userLocation, setUserLocation] = useState('');
+  const [showMatchingForm, setShowMatchingForm] = useState(false);
+  const [selectedResourceId, setSelectedResourceId] = useState(null);
   
   // State for resources and UI
   const [resources, setResources] = useState([]);
@@ -90,6 +96,46 @@ function App() {
     }
   };
 
+  // Function to open AI matching form
+  const openAIMatchingForm = (resourceId) => {
+    setSelectedResourceId(resourceId);
+    setShowMatchingForm(true);
+  };
+
+  // Function to claim a resource with AI matching
+  const handleAIMatchingClaim = async (e) => {
+    e.preventDefault();
+    
+    if (!userNeeds || !userLocation) {
+      showMessage("Please describe your needs and location", "error");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      showMessage("Processing AI matching...", "info");
+      
+      const result = await icp_resource_sharing_backend.claimResourceWithAIMatching(
+        selectedResourceId,
+        userNeeds,
+        userLocation
+      );
+      
+      showMessage(result, "success");
+      setUserNeeds('');
+      setUserLocation('');
+      setShowMatchingForm(false);
+      setSelectedResourceId(null);
+      
+      // Refresh the resources list
+      fetchResources();
+    } catch (error) {
+      console.error("Error with AI matching:", error);
+      showMessage("Failed to process AI matching. Please try again.", "error");
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -131,7 +177,7 @@ function App() {
               <input
                 type="number"
                 id="quantity"
-                value={resources.quantity}
+                value={quantity}
                 min="1"
                 onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
               />
@@ -157,6 +203,63 @@ function App() {
             </button>
           </form>
         </div>
+        
+        {/* AI Matching Form (Modal) */}
+        {showMatchingForm && (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h3>AI Resource Matching</h3>
+                <button 
+                  className="modal-close" 
+                  onClick={() => setShowMatchingForm(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <form onSubmit={handleAIMatchingClaim}>
+                <div className="form-group">
+                  <label htmlFor="userNeeds">Describe Your Needs</label>
+                  <textarea
+                    id="userNeeds"
+                    value={userNeeds}
+                    onChange={(e) => setUserNeeds(e.target.value)}
+                    placeholder="Describe what you need and how you'll use this resource"
+                    rows={4}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="userLocation">Your Location</label>
+                  <input
+                    type="text"
+                    id="userLocation"
+                    value={userLocation}
+                    onChange={(e) => setUserLocation(e.target.value)}
+                    placeholder="Enter your location"
+                  />
+                </div>
+                
+                <div className="modal-actions">
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary"
+                    onClick={() => setShowMatchingForm(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className={`btn btn-primary ${loading ? 'btn-loading' : ''}`}
+                    disabled={loading}
+                  >
+                    {loading ? 'Processing...' : 'Submit for AI Matching'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         
         {/* Available Resources List */}
         <div className="resources-container">
@@ -200,19 +303,29 @@ function App() {
                       <span className="detail-value">{resource.location}</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleClaimResource(resource.id)}
-                    className="btn btn-secondary"
-                    disabled={loading || resource.status.toLowerCase() !== 'available'}
-                  >
-                    {resource.status.toLowerCase() === 'available' ? 'Claim Resource' : 'Already Claimed'}
-                  </button>
+                  <div className="resource-actions">
+                    <button
+                      onClick={() => handleClaimResource(resource.id)}
+                      className="btn btn-secondary"
+                      disabled={loading || resource.status.toLowerCase() !== 'available'}
+                    >
+                      Direct Claim
+                    </button>
+                    <button
+                      onClick={() => openAIMatchingForm(resource.id)}
+                      className="btn btn-primary"
+                      disabled={loading || resource.status.toLowerCase() !== 'available'}
+                    >
+                      AI Matching
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+      
       
       <footer className="app-footer">
         <p>Built on <a href="https://internetcomputer.org" target="_blank" rel="noopener noreferrer">Internet Computer</a> | Decentralized Resource Sharing</p>

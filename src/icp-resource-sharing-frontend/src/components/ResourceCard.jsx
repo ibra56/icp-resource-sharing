@@ -1,54 +1,38 @@
-import { useState } from 'react';
-import { icp_resource_sharing_backend as backend } from '../../../declarations/icp-resource-sharing-backend';
+import React from 'react';
+import { Link } from 'react-router-dom';
 
-const ResourceCard = ({ resource }) => {
-  const [claiming, setClaiming] = useState(false);
-  const [message, setMessage] = useState('');
-  const [userNeeds, setUserNeeds] = useState('');
-
-  const handleClaim = async () => {
-    if (!userNeeds.trim()) {
-      setMessage('Please describe your needs first');
-      return;
-    }
-
-    setClaiming(true);
-    try {
-      const result = await backend.claimResourceWithAIMatching(resource.id, userNeeds);
-      setMessage(result);
-    } catch (error) {
-      console.error("Error claiming resource:", error);
-      setMessage('Failed to claim resource');
-    } finally {
-      setClaiming(false);
-    }
-  };
+function ResourceCard({ resource }) {
+  // Get the first media item if available
+  const featuredImage = resource.media.length > 0 
+    ? resource.media[0].url 
+    : 'https://via.placeholder.com/300x200?text=No+Image';
 
   return (
-    <div className="resource-card">
-      <h3>{resource.category}</h3>
-      <p className="description">{resource.description}</p>
-      <div className="resource-details">
-        <p><strong>Quantity:</strong> {resource.quantity}</p>
-        <p><strong>Location:</strong> {resource.location}</p>
-      </div>
-      <div className="claim-section">
-        <textarea
-          placeholder="Describe what you need this resource for..."
-          value={userNeeds}
-          onChange={(e) => setUserNeeds(e.target.value)}
-        />
-        <button 
-          onClick={handleClaim} 
-          disabled={claiming}
-          className="claim-button"
-        >
-          {claiming ? 'Processing...' : 'Claim with AI Match'}
-        </button>
-        {message && <p className="message">{message}</p>}
+    <div className="card h-100">
+      <img 
+        src={featuredImage} 
+        className="card-img-top" 
+        alt={resource.description}
+        style={{ height: '200px', objectFit: 'cover' }}
+      />
+      <div className="card-body">
+        <h5 className="card-title">{resource.description}</h5>
+        <p className="card-text">
+          <strong>Category:</strong> {resource.category}<br />
+          <strong>Location:</strong> {resource.location}<br />
+          <strong>Quantity:</strong> {resource.quantity}
+        </p>
+        <div className="d-flex flex-wrap mb-2">
+          {resource.tags.map((tag, index) => (
+            <span key={index} className="badge bg-secondary me-1 mb-1">{tag}</span>
+          ))}
+        </div>
+        <Link to={`/resource/${resource.id}`} className="btn btn-primary">
+          View Details
+        </Link>
       </div>
     </div>
   );
-};
+}
 
 export default ResourceCard;

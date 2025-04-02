@@ -1,212 +1,364 @@
 import Principal "mo:base/Principal";
+import Result "mo:base/Result";
+import Time "mo:base/Time";
+import _ "mo:llm";
+import Nat "mo:base/Nat"; // Added missing Nat import
+
+import Types "types";
+import UserProfiles "user_profiles";
+import Resources "resources";
+import Reviews "reviews";
+import Notifications "notifications";
+import History "history";
+import AIUtils "ai_utils";
+import UserNeeds "user_needs";
 import HashMap "mo:base/HashMap";
-import Nat "mo:base/Nat";
-import Nat32 "mo:base/Nat32";
-import Array "mo:base/Array";
 import Hash "mo:base/Hash";
-import Iter "mo:base/Iter";
 import Text "mo:base/Text";
-import Int "mo:base/Int";
-import Float "mo:base/Float";
-import Char "mo:base/Char";
-import LLM "mo:llm";
+import Iter "mo:base/Iter";
+import Array "mo:base/Array";
 
 actor class ResourceSharingPlatform() {
+    // Initialize all managers
+    private let userProfileManager = UserProfiles.UserProfileManager();
+    private let resourceManager = Resources.ResourceManager();
+    private let reviewManager = Reviews.ReviewManager();
+    private let notificationManager = Notifications.NotificationManager();
+    private let historyManager = History.HistoryManager();
+    private let aiManager = AIUtils.AIManager();
+    private let userNeedsManager = UserNeeds.UserNeedsManager();
     
-    type Resource = {
-        id: Nat;
-        owner: Principal;
-        category: Text;
-        description: Text;  // Added description field for better AI matching
-        quantity: Nat;
-        location: Text;
-        status: Text;
-        claimedBy: ?Text;
+    // User Profile Functions
+    public shared({ caller }) func createOrUpdateProfile(name: Text, bio: Text, contactInfo: Text) : async Bool {
+        return userProfileManager.createOrUpdateProfile(caller, name, bio, contactInfo);
     };
-
-    stable var resourceIdCounter: Nat = 0;
-    stable var resourceEntries: [(Nat, Resource)] = [];
     
-    func natHash(n: Nat) : Hash.Hash {
-        let text = Int.toText(n);
+    public query func getProfile(user: Principal) : async ?Types.UserProfile {
+        return userProfileManager.getProfile(user);
+    };
+    
+    // Resource Management Functions
+    public shared({ caller }) func addResource(
+        category: Text,
+        tags: [Types.Tag],
+        description: Text,
+        quantity: Nat,
+        location: Text,
+        coordinates: ?Types.Coordinates,
+        media: [Types.MediaItem],
+        expirationDays: ?Nat
+    ) : async Nat {
+        let resourceId = resourceManager.addResource(
+            caller, category, tags, description, quantity, 
+            location, coordinates, media, expirationDays
+        );
+        
+        // Record history
+        let _ = historyManager.recordResourceHistory(
+            resourceId,
+            #Created,
+            caller,
+            "Resource created in category: " # category
+        );
+        
+        return resourceId;
+    };
+    
+    public query func getAvailableResources() : async [Types.Resource] {
+        return resourceManager.getAvailableResources();
+    };
+    
+    public query func getResource(resourceId: Nat) : async ?Types.Resource {
+        return resourceManager.getResource(resourceId);
+    };
+    
+    // Reservation System
+    public shared({ caller }) func reserveResource(resourceId: Nat, reservationHours: Nat) : async Result.Result<Text, Text> {
+        let result = resourceManager.reserveResource(caller, resourceId, reservationHours);
+        
+        switch (result) {
+            case (#ok(_)) {
+                // Get the resource to access owner information
+                switch (resourceManager.getResource(resourceId)) {
+                    case (null) { /* Should not happen */ };
+                    case (?resource) {
+                        // Record history
+                        let _ = historyManager.recordResourceHistory(
+                            resourceId,
+                            #Reserved,
+                            caller,
+                            "Resource reserved for " # Nat.toText(reservationHours) # " hours"
+                        );
+                        
+                        // Create notification for resource owner
+                        let _ = notificationManager.createNotification(
+                            resource.owner,
+                            #ResourceReserved,
+                            ?resourceId,
+                            "Your resource '" # resource.description # "' has been reserved."
+                        );
+                    };
+                };
+            };
+            case (#err(_)) { /* No action needed */ };
+        };
+        
+        return result;
+    };
+    
+    public shared func checkAndReleaseExpiredReservations() : async Nat {
+        return resourceManager.checkAndReleaseExpiredReservations();
+    };
+    
+    // AI-powered Resource Matching
+    public shared func getResourceRecommendations(userNeeds: Text, userLocation: Text) : async [Types.Resource] {
+        let availableResources = resourceManager.getAvailableResources();
+        return await aiManager.rankResourcesByRelevance(availableResources, userNeeds, userLocation);
+    };
+    
+    public shared({ caller }) func claimResourceWithAIMatching(resourceId: Nat, userNeeds: Text) : async Result.Result<Text, Text> {
+        switch (resourceManager.getResource(resourceId)) {
+            case (null) { return #err("Resource not found"); };
+            case (?resource) {
+                if (resource.status != "Available" and resource.status != "Reserved") {
+                    return #err("Resource is not available for claiming");
+                };
+                
+                // If reserved, check if caller is the one who reserved it
+                if (resource.status == "Reserved") {
+                    switch (resource.reservedBy) {
+                        case (null) { /* Should not happen */ };
+                        case (?reserver) {
+                            if (reserver != Principal.toText(caller)) {
+                                return #err("This resource is reserved by someone else");
+                            };
+                        };
+                    };
+                };
+                
+                // Use LLM to determine if this is a good match
+                let isGoodMatch = await aiManager.evaluateResourceMatch(
+                    resource.category,
+                    resource.description,
+                    userNeeds
+                );
+                
+                if (isGoodMatch) {
+                    let result = resourceManager.claimResource(caller, resourceId);
+                    
+                    switch (result) {
+                        case (#ok(_)) {
+                            // Record history
+                            let _ = historyManager.recordResourceHistory(
+                                resourceId,
+                                #Claimed,
+                                caller,
+                                "Resource claimed based on AI matching"
+                            );
+                            
+                            // Create notification for resource owner
+                            let _ = notificationManager.createNotification(
+                                resource.owner,
+                                #ResourceClaimed,
+                                ?resourceId,
+                                "Your resource '" # resource.description # "' has been claimed."
+                            );
+                            
+                            return #ok("Resource claimed successfully!");
+                        };
+                        case (#err(e)) {
+                            return #err(e);
+                        };
+                    };
+                } else {
+                    return #err("Based on AI analysis, this resource might not be the best match for your needs.");
+                };
+            };
+        };
+    };
+    
+    
+    public shared({ caller }) func addReview(resourceId: Nat, rating: Nat, comment: Text) : async Result.Result<Nat, Text> {
+        // Get the resource first to check if it exists and if the caller has claimed it
+        switch (resourceManager.getResource(resourceId)) {
+            case (null) { return #err("Resource not found"); };
+            case (?resource) {
+                if (resource.claimedBy != ?Principal.toText(caller)) {
+                    return #err("You can only review resources you have claimed");
+                };
+                
+                // Add the review directly
+                reviewIdCounter += 1;
+                let newReview: Types.Review = {
+                    reviewer = caller;
+                    resourceId = resourceId;
+                    rating = rating;
+                    comment = comment;
+                    timestamp = Time.now();
+                };
+                
+                reviews.put(reviewIdCounter, newReview);
+                
+                // Update user reputation
+                userProfileManager.updateUserReputation(resource.owner, rating);
+                
+                // Create notification for resource owner
+                let _ = notificationManager.createNotification(
+                    resource.owner,
+                    #NewReview,
+                    ?resourceId,
+                    "Your resource received a new review with rating: " # Nat.toText(rating)
+                );
+                
+                return #ok(reviewIdCounter);
+            };
+        };
+    };
+    
+    // For tracking reviews
+    private var reviewIdCounter: Nat = 0;
+    private var reviewEntries: [(Nat, Types.Review)] = [];
+    private func natHash(n: Nat) : Hash.Hash {
+        let text = Nat.toText(n);
         Text.hash(text)
     };
     
-    let resources = HashMap.fromIter<Nat, Resource>(
-        resourceEntries.vals(), 
-        10, 
-        Nat.equal, 
-        natHash
+    private let reviews = HashMap.HashMap<Nat, Types.Review>(
+    10, Nat.equal, natHash
     );
-
-    public shared ({ caller }) func addResource(category: Text, description: Text, quantity: Nat, location: Text) : async Nat {
-        let newId = resourceIdCounter + 1;
-        let newResource: Resource = {
-            id = newId;
-            owner = caller;
-            category = category;
-            description = description;
-            quantity = quantity;
-            location = location;
-            status = "Available";
-            claimedBy = null;
-        };
-        
-        resources.put(newId, newResource);
-        resourceIdCounter := newId;
-        return newId;
+    
+    public query func getResourceReviews(resourceId: Nat) : async [Types.Review] {
+        return reviewManager.getResourceReviews(resourceId);
     };
-
-    public query func getAvailableResources() : async [Resource] {
-        let resourcesArray = Iter.toArray(resources.entries());
-        return Array.map<(Nat, Resource), Resource>(
-            Array.filter<(Nat, Resource)>(resourcesArray, func((_, r): (Nat, Resource)) : Bool { 
-                r.status == "Available" 
-            }),
-            func((_, r): (Nat, Resource)) : Resource { r }
-        );
+    
+    // Categories and Tags
+    public shared({ caller = _ }) func addCategory(name: Text, description: Text) : async Nat {
+        return resourceManager.addCategory(name, description);
     };
-
-    // Function to get resource recommendations based on user needs
-    public shared func getResourceRecommendations(userNeeds: Text, userLocation: Text) : async [Resource] {
-        let availableResources = await getAvailableResources();
-        
-        // Use LLM to rank resources based on user needs
-        let rankedResources = await rankResourcesByRelevance(availableResources, userNeeds, userLocation);
-        return rankedResources;
+    
+    public query func getCategories() : async [Types.Category] {
+        return resourceManager.getCategories();
     };
-
-    // Helper function to rank resources using LLM
-    private func rankResourcesByRelevance(resources: [Resource], userNeeds: Text, userLocation: Text) : async [Resource] {
-        if (resources.size() == 0) {
-            return [];
-        };
-
-        var rankedResources : [Resource] = [];
-        
-        for (resource in resources.vals()) {
-            // Create a prompt for the LLM to evaluate the match
-            let prompt = "I need: " # userNeeds # ". I am located at: " # userLocation # 
-                         ". There is a resource in category: " # resource.category # 
-                         " with description: " # resource.description # 
-                         " located at: " # resource.location # 
-                         ". On a scale of 0 to 10, how well does this resource match my needs? Just respond with a number.";
-            
-            // Call the LLM
-            let response = await LLM.prompt(#Llama3_1_8B, prompt);
-            
-            // Try to extract a number from the response
-            let score = extractScore(response);
-            
-            if (score > 7) {  // Only include good matches
-                rankedResources := Array.append(rankedResources, [resource]);
-            };
-        };
-        
-        return rankedResources;
+    
+    public query func searchResourcesByTags(searchTags: [Types.Tag]) : async [Types.Resource] {
+        return resourceManager.searchResourcesByTags(searchTags);
     };
-
-    // Helper function to extract a score from LLM response
-    private func extractScore(response: Text) : Float {
-        // Simple extraction - in a real app, you'd want more robust parsing
-        let digits = Iter.toArray(
-            Iter.filter<Char>(Text.toIter(response), func (c: Char) : Bool {
-                c >= '0' and c <= '9'
-            })
-        );
-        
-        switch (digits.size()) {
-            case 0 { return 0; };
-            case _ { 
-                let scoreText = Text.fromIter(digits.vals());
-                
-                // Try to convert to a number
-                var score : Float = 0;
-                var i : Nat = 0;
-                var decimalFound = false;
-                var decimalPlace : Float = 10;
-                
-                for (c in Text.toIter(scoreText)) {
-                    if (c >= '0' and c <= '9') {
-                        let digit = Float.fromInt(Nat32.toNat(Char.toNat32(c) - 48));
-                        if (decimalFound) {
-                            score := score + digit / decimalPlace;
-                            decimalPlace := decimalPlace * 10;
-                        } else {
-                            score := score * 10 + digit;
-                        };
-                    } else if (c == '.') {
-                        decimalFound := true;
-                    };
-                    i += 1;
-                };
-                
-                if (score > 10) { return 10; } 
-                else { return score; }
-            };
-        };
+    
+    // Geographical Matching
+    public query func findResourcesNearby(userCoordinates: Types.Coordinates, maxDistanceKm: Float) : async [Types.Resource] {
+        return resourceManager.findResourcesNearby(userCoordinates, maxDistanceKm);
     };
-
-    public shared ({ caller }) func claimResourceWithAIMatching(resourceId: Nat, userNeeds: Text) : async Text {
-        switch (resources.get(resourceId)) {
-            case (null) { return "Resource not found"; };
-            case (?resource) {
-                if (resource.status != "Available") {
-                    return "Resource is not available for claiming";
-                };
-
-                // Use LLM to determine if this is a good match
-                let prompt = "I need: " # userNeeds # 
-                             ". There is a resource in category: " # resource.category # 
-                             " with description: " # resource.description # 
-                             ". Should I claim this resource? Answer only yes or no.";
-                
-                let response = await LLM.prompt(#Llama3_1_8B, prompt);
-                
-                // Check if the response contains "yes"
-                if (Text.contains(Text.toLowercase(response), #text "yes")) {
-                    let updatedResource: Resource = {
-                        id = resource.id;
-                        owner = resource.owner;
-                        category = resource.category;
-                        description = resource.description;
-                        quantity = resource.quantity;
-                        location = resource.location;
-                        status = "Claimed";
-                        claimedBy = ?Principal.toText(caller);
-                    };
-                    
-                    resources.put(resourceId, updatedResource);
-                    return "Resource claimed successfully!";
-                } else {
-                    return "Based on AI analysis, this resource might not be the best match for your needs.";
-                };
-            };
-        };
+    
+    // Resource Media
+    public shared({ caller }) func addMediaToResource(resourceId: Nat, newMedia: Types.MediaItem) : async Result.Result<Text, Text> {
+        return resourceManager.addMediaToResource(caller, resourceId, newMedia);
     };
-
-    // Get detailed AI analysis of a resource match
+    
+    // Notifications
+    public query({ caller }) func getMyNotifications(onlyUnread: Bool) : async [Types.Notification] {
+        return notificationManager.getUserNotifications(caller, onlyUnread);
+    };
+    
+    public shared({ caller }) func markNotificationsAsRead(notificationIds: [Nat]) : async Nat {
+        return notificationManager.markNotificationsAsRead(caller, notificationIds);
+    };
+    
+    // Resource History
+    public query func getResourceHistory(resourceId: Nat) : async [Types.ResourceHistoryEntry] {
+        return historyManager.getResourceHistory(resourceId);
+    };
+    
+    // AI Analysis
     public func getResourceMatchAnalysis(resourceId: Nat, userNeeds: Text) : async Text {
-        switch (resources.get(resourceId)) {
-            case (null) { return "Resource not found"; };
+        switch (resourceManager.getResource(resourceId)) {
+            case (null) {
+                return "Resource not found";
+            };
             case (?resource) {
-                let prompt = "I need: " # userNeeds # 
-                             ". There is a resource in category: " # resource.category # 
-                             " with description: " # resource.description # 
-                             " located at: " # resource.location # 
-                             ". Analyze in 3-5 sentences how well this resource matches my needs.";
-                
-                let response = await LLM.prompt(#Llama3_1_8B, prompt);
-                return response;
+                return await aiManager.getResourceMatchAnalysis(
+                    resource.category,
+                    resource.description,
+                    resource.location,
+                    userNeeds
+                );
             };
         };
     };
+    
+    // User Needs and Prediction
+    public shared({ caller }) func recordUserNeed(category: Text, tags: [Types.Tag], description: Text) : async Nat {
+        return userNeedsManager.recordUserNeed(caller, category, tags, description);
+    };
+    
+    public shared({ caller }) func markNeedFulfilled(needId: Nat) : async Result.Result<Text, Text> {
+        return userNeedsManager.markNeedFulfilled(caller, needId);
+    };
+    
+    public shared({ caller }) func predictUserNeeds() : async Text {
+        let userPastNeeds = userNeedsManager.getUserNeeds(caller);
+        return await aiManager.predictUserNeeds(userPastNeeds);
+    };
+    
+    public shared({ caller = _ }) func getSuggestedResourcesBasedOnPrediction() : async [Types.Resource] {
+        let prediction = await predictUserNeeds();
+        let availableResources = resourceManager.getAvailableResources();
+        // Use the prediction to find matching resources
+        return await aiManager.suggestResourcesBasedOnPrediction(prediction, availableResources);
+    };
 
+    // Add these methods to your main.mo file
+
+// Get resources owned by the caller
+public shared({ caller }) func getMyResources() : async [Types.Resource] {
+  let allResources = resourceManager.getAvailableResources();
+  return Array.filter<Types.Resource>(allResources, func(r: Types.Resource) : Bool {
+    return r.owner == caller;
+  });
+};
+
+// Get resources reserved by the caller
+public shared({ caller }) func getMyReservedResources() : async [Types.Resource] {
+  let allResources = resourceManager.getAvailableResources();
+  return Array.filter<Types.Resource>(allResources, func(r: Types.Resource) : Bool {
+    switch (r.reservedBy) {
+      case (null) { return false; };
+      case (?reservedBy) { return reservedBy == Principal.toText(caller); };
+    };
+  });
+};
+
+// Get resources claimed by the caller
+public shared({ caller }) func getMyClaimedResources() : async [Types.Resource] {
+  let allResources = resourceManager.getAvailableResources();
+  return Array.filter<Types.Resource>(allResources, func(r: Types.Resource) : Bool {
+    switch (r.claimedBy) {
+      case (null) { return false; };
+      case (?claimedBy) { return claimedBy == Principal.toText(caller); };
+    };
+  });
+};
+    
+    // System functions for canister upgrades
     system func preupgrade() {
-        resourceEntries := Iter.toArray(resources.entries());
+        userProfileManager.preupgrade();
+        resourceManager.preupgrade();
+        reviewManager.preupgrade();
+        notificationManager.preupgrade();
+        historyManager.preupgrade();
+        userNeedsManager.preupgrade();
+        reviewEntries := Iter.toArray(reviews.entries());
     };
     
     system func postupgrade() {
-        resourceEntries := [];
+        userProfileManager.postupgrade();
+        resourceManager.postupgrade();
+        reviewManager.postupgrade();
+        notificationManager.postupgrade();
+        historyManager.postupgrade();
+        userNeedsManager.postupgrade();
+        for ((id, review) in reviewEntries.vals()) {
+            reviews.put(id, review);
+        };
+        reviewEntries := [];
     };
-};
+}

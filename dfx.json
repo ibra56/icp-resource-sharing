@@ -4,11 +4,28 @@
       "main": "src/icp-resource-sharing-backend/main.mo",
       "type": "motoko"
     },
+    "internet_identity": {
+      "type": "custom",
+      "candid": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity.did",
+      "wasm": "https://github.com/dfinity/internet-identity/releases/latest/download/internet_identity_dev.wasm.gz",
+      "remote": {
+        "id": {
+          "ic": "rdmx6-jaaaa-aaaaa-aaadq-cai",
+          "playground": "rdmx6-jaaaa-aaaaa-aaadq-cai"
+        }
+      },
+      "frontend": {}
+    },
     "icp-resource-sharing-frontend": {
       "dependencies": [
-        "icp-resource-sharing-backend"
+        "icp-resource-sharing-backend",
+        "internet_identity"
       ],
+      "frontend": {
+        "entrypoint": "src/icp-resource-sharing-frontend/index.html"
+      },
       "source": [
+        "src/icp-resource-sharing-frontend/src",
         "src/icp-resource-sharing-frontend/dist"
       ],
       "type": "assets",

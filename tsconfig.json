@@ -7,5 +7,14 @@
         "moduleResolution": "node",
         "allowJs": true,
         "outDir": "HACK_BECAUSE_OF_ALLOW_JS"
-    }
+    },
+    "include": ["src/**/*"],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "src/icp-resource-sharing-frontend/src/components/AddResourceForm.jsx",
+        "src/icp-resource-sharing-frontend/src/components/ResourceAnalysis.jsx",
+        "src/icp-resource-sharing-frontend/src/components/ResourceList.jsx",
+        "src/icp-resource-sharing-frontend/src/components/ResourceRecommendations.jsx"
+    ]
 }

@@ -1,8 +1,8 @@
 import { Actor, HttpAgent } from '@dfinity/agent';
 import { idlFactory } from '../../declarations/icp-resource-sharing-backend';
 
-const HOST = process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:4943';
-const canisterId = process.env.CANISTER_ID_ICP_RESOURCE_SHARING_BACKEND;
+const HOST = process.env.DFX_NETWORK === "ic" ? "https://identity.ic0.app"  : 'http://localhost:4943?canisterId=be2us-64aaa-aaaaa-qaabq-cai';
+const canisterId = 'be2us-64aaa-aaaaa-qaabq-cai';
 
 
 // Create an anonymous agent for public queries

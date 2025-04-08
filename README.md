@@ -1,4 +1,4 @@
-# `icp-resource-sharing`
+# `icp-resource-sharing` 
 
 Welcome to your new `icp-resource-sharing` project and to the Internet Computer development community. By default, creating a new project adds this README and some template files to your project directory. You can edit these template files to customize your project and to include your own code to speed up the development cycle.
 
